@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>Create Account • OhidBook</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+<div class="auth-page">
+
+  <div class="auth-box">
+
+    <div class="auth-title">
+      OhidBook
+    </div>
+
+    <p style="text-align:center;color:#999;margin-bottom:25px;">
+      Create your account ✨
+    </p>
+
+    <form id="registerForm">
+
+      <input
+        id="fullName"
+        type="text"
+        placeholder="Full name"
+        required
+      >
+
+      <input
+        id="username"
+        type="text"
+        placeholder="Username"
+        minlength="3"
+        required
+      >
+
+      <input
+        id="email"
+        type="email"
+        placeholder="Email address"
+        required
+      >
+
+      <input
+        id="password"
+        type="password"
+        placeholder="Password"
+        minlength="6"
+        required
+      >
+
+      <button
+        type="submit"
+        style="width:100%;"
+      >
+        Create Account
+      </button>
+
+    </form>
+
+    <p
+      id="message"
+      style="
+        text-align:center;
+        margin-top:15px;
+        color:#ff5577;
+      "
+    ></p>
+
+    <div
+      style="
+        text-align:center;
+        margin-top:22px;
+        color:#888;
+      "
+    >
+      Already have an account?
+
+      <a
+        href="login.html"
+        style="
+          color:#00eaff;
+          text-decoration:none;
+        "
+      >
+        Login
+      </a>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script type="module">
+
+import { supabase } from "./supabase.js";
+
+const form =
+  document.getElementById("registerForm");
+
+const message =
+  document.getElementById("message");
+
+form.addEventListener("submit", async (e) => {
+
+  e.preventDefault();
+
+  message.textContent = "Creating account...";
+
+  const fullName =
+    document.getElementById("fullName").value.trim();
+
+  const username =
+    document.getElementById("username").value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "");
+
+  const email =
+    document.getElementById("email").value.trim();
+
+  const password =
+    document.getElementById("password").value;
+
+  if (username.length < 3) {
+    message.textContent =
+      "Username must contain at least 3 characters.";
+
+    return;
+  }
+
+  const { data, error } =
+    await supabase.auth.signUp({
+      email,
+      password,
+
+      options: {
+        data: {
+          full_name: fullName,
+          username
+        }
+      }
+    });
+
+  if (error) {
+    message.textContent = error.message;
+    return;
+  }
+
+  /*
+    The database trigger creates the profile automatically.
+  */
+
+  if (data.session) {
+    location.href = "index.html";
+  } else {
+
+    message.style.color = "#00eaff";
+
+    message.textContent =
+      "Account created. Check your email if confirmation is enabled.";
+
+    setTimeout(() => {
+      location.href = "login.html";
+    }, 2500);
+  }
+
+});
+
+</script>
+
+</body>
+</html>
