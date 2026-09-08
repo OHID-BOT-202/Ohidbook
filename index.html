@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1.0"
+>
+
+<title>OhidBook</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+<header class="top">
+
+  <div class="brand">
+    OhidBook
+  </div>
+
+  <input
+    id="search"
+    class="search"
+    type="search"
+    placeholder="Search OhidBook..."
+  >
+
+  <nav class="nav">
+
+    <a href="index.html">
+      Home
+    </a>
+
+    <a id="profileLink" href="#">
+      Profile
+    </a>
+
+    <a href="settings.html">
+      ⚙
+    </a>
+
+  </nav>
+
+</header>
+
+
+<main>
+
+  <!-- MINI PROFILE -->
+
+  <div
+    class="card"
+    id="miniProfile"
+  >
+    Loading profile...
+  </div>
+
+
+  <!-- CREATE POST -->
+
+  <div class="postbox">
+
+    <h3 style="margin-bottom:15px;">
+      Create a post
+    </h3>
+
+    <textarea
+      id="postText"
+      placeholder="What's on your mind?"
+    ></textarea>
+
+    <input
+      id="media"
+      type="file"
+      accept="image/*,video/*"
+    >
+
+    <button
+      id="postBtn"
+      style="width:100%;"
+    >
+      🚀 Post
+    </button>
+
+  </div>
+
+
+  <!-- SEARCH RESULT -->
+
+  <div id="searchResults"></div>
+
+
+  <!-- FEED -->
+
+  <div id="feed">
+    Loading posts...
+  </div>
+
+</main>
+
+
+<script type="module">
+
+import {
+  supabase
+} from "./supabase.js";
+
+import {
+  esc,
+  avatar,
+  timeAgo,
+  getUser,
+  getProfile,
+  uploadMedia,
+  notify,
+  logout,
+  showMessage
+} from "./app.js";
+
+
+let currentUser = null;
+
+
+/* ================= INIT ================= */
+
+async function init(){
+
+  currentUser = await getUser();
+
+  if(!currentUser){
+    location.href = "login.html";
+    return;
+  }
+
+  const profile =
+    await getProfile(currentUser.id);
+
+  document.getElementById("profileLink").href =
+    `profile.html?id=${currentUser.id}`;
+
+  document.getElementById("miniProfile").innerHTML = `
+
+    <div style="
+      display:flex;
+      align-items:center;
+      gap:12px;
+    ">
+
+      <img
+        class="avatar"
+        src="${avatar(
+          profile?.avatar_url,
+          profile?.full_name || "User"
+        )}"
+      >
+
+      <div>
+
+        <strong>
+          ${esc(profile?.full_name || "User")}
+        </strong>
+
+        <div style="color:#888;">
+          @${esc(profile?.username || "")}
+        </div>
+
+      </div>
+
+    </div>
+  `;
+
+  await loadFeed();
+
+}
+
+
+/* ================= CREATE POST ================= */
+
+document
+  .getElementById("postBtn")
+  .addEventListener("click", async () => {
+
+    const text =
+      document
+        .getElementById("postText")
+        .value
+        .trim();
+
+    const file =
+      document.getElementById("media").files[0];
+
+    if(!text && !file){
+
+      showMessage(
+        "Write something or select a photo/video."
+      );
+
+      return;
+    }
+
+    const btn =
+      document.getElementById("postBtn");
+
+    btn.disabled = true;
+    btn.textContent = "Posting...";
+
+    try{
+
+      let mediaUrl = null;
+      let mediaType = null;
+
+      if(file){
+
+        if(
+          !file.type.startsWith("image/") &&
+          !file.type.startsWith("video/")
+        ){
+
+          throw new Error(
+            "Only image and video files are allowed."
+          );
+        }
+
+        mediaUrl =
+          await uploadMedia(
+            file,
+            `posts/${currentUser.id}`
+          );
+
+        mediaType =
+          file.type.startsWith("video/")
+            ? "video"
+            : "image";
+      }
+
+      const { error } =
+        await supabase
+          .from("posts")
+          .insert({
+            user_id: currentUser.id,
+            content: text || null,
+            media_url: mediaUrl,
+            media_type: mediaType
+          });
+
+      if(error) throw error;
+
+      document.getElementById("postText").value = "";
+      document.getElementById("media").value = "";
+
+      showMessage(
+        "Post published!",
+        "success"
+      );
+
+      await loadFeed();
+
+    }catch(error){
+
+      console.error(error);
+
+      showMessage(error.message);
+
+    }finally{
+
+      btn.disabled = false;
+      btn.textContent = "🚀 Post";
+
+    }
+
+  });
+
+
+/* ================= LOAD FEED ================= */
+
+async function loadFeed(){
+
+  const feed =
+    document.getElementById("feed");
+
+  feed.innerHTML =
+    `<div class="card">Loading...</div>`;
+
+  const { data: posts, error } =
+    await supabase
+      .from("posts")
+      .select(`
+        *,
+        profiles:user_id(
+          id,
+          full_name,
+          username,
+          avatar_url
+        )
+      `)
+      .order("created_at", {
+        ascending:false
+      });
+
+  if(error){
+
+    console.error(error);
+
+    feed.innerHTML = `
+      <div class="card">
+        Failed to load posts.
+      </div>
+    `;
+
+    return;
+  }
+
+  if(!posts?.length){
+
+    feed.innerHTML = `
+      <div class="card" style="text-align:center;">
+        <div style="font-size:40px;">🌈</div>
+
+        <h3>No posts yet</h3>
+
+        <p style="color:#888;margin-top:7px;">
+          Be the first person to post something!
+        </p>
+      </div>
+    `;
+
+    return;
+  }
+
+  feed.innerHTML = "";
+
+  for(const post of posts){
+
+    feed.insertAdjacentHTML(
+      "beforeend",
+      await postHTML(post)
+    );
+
+  }
+
+}
+
+
+/* ================= POST HTML ================= */
+
+async function postHTML(post){
+
+  const profile =
+    post.profiles || {};
+
+  const { count: likeCount } =
+    await supabase
+      .from("post_likes")
+      .select("*", {
+        count:"exact",
+        head:true
+      })
+      .eq("post_id", post.id);
+
+  const { count: commentCount } =
+    await supabase
+      .from("comments")
+      .select("*", {
+        count:"exact",
+        head:true
+      })
+      .eq("post_id", post.id);
+
+  const { data: liked } =
+    await supabase
+      .from("post_likes")
+      .select("post_id")
+      .eq("post_id", post.id)
+      .eq("user_id", currentUser.id)
+      .maybeSingle();
+
+  let media = "";
+
+  if(post.media_url){
+
+    if(post.media_type === "video"){
+
+      media = `
+        <video
+          class="post-media"
+          controls
+          preload="metadata"
+          src="${post.media_url}"
+        ></video>
+      `;
+
+    }else{
+
+      media = `
+        <img
+          class="post-media"
+          src="${post.media_url}"
+          alt="Post image"
+        >
+      `;
+    }
+  }
+
+  return `
+
+    <article
+      class="card"
+      data-post="${post.id}"
+    >
+
+      <!-- AUTHOR -->
+
+      <div style="
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+      ">
+
+        <a
+          href="profile.html?id=${post.user_id}"
+          style="
+            display:flex;
+            align-items:center;
+            gap:10px;
+            color:white;
+            text-decoration:none;
+          "
+        >
+
+          <img
+            class="avatar"
+            src="${avatar(
+              profile.avatar_url,
+              profile.full_name
+            )}"
+          >
+
+          <div>
+
+            <strong>
+              ${esc(
+                profile.full_name ||
+                profile.username ||
+                "User"
+              )}
+            </strong>
+
+            <div style="
+              color:#777;
+              font-size:12px;
+            ">
+              @${esc(profile.username || "")}
+              · ${timeAgo(post.created_at)}
+            </div>
+
+          </div>
+
+        </a>
+
+        ${
+          post.user_id === currentUser.id
+          ? `
+            <button
+              class="deletePost"
+              data-id="${post.id}"
+              style="
+                background:#18121a;
+                border:1px solid #ff0055;
+                color:#ff5577;
+                padding:7px 10px;
+              "
+            >
+              🗑
+            </button>
+          `
+          : ""
+        }
+
+      </div>
+
+
+      <!-- CONTENT -->
+
+      ${
+        post.content
+        ? `
+          <div style="
+            margin-top:15px;
+            line-height:1.6;
+            white-space:pre-wrap;
+          ">
+            ${esc(post.content)}
+          </div>
+        `
+        : ""
+      }
+
+
+      ${media}
+
+
+      <!-- ACTIONS -->
+
+      <div class="post-actions">
+
+        <button
+          class="likeBtn"
+          data-id="${post.id}"
+          data-liked="${liked ? "yes" : "no"}"
+        >
+          ${liked ? "❤️" : "🤍"}
+          ${likeCount || 0}
+        </button>
+
+        <button
+          class="commentToggle"
+          data-id="${post.id}"
+        >
+          💬 ${commentCount || 0}
+        </button>
+
+        <button
+          class="shareBtn"
+          data-id="${post.id}"
+        >
+          ↗ Share
+        </button>
+
+      </div>
+
+
+      <!-- COMMENTS -->
+
+      <div
+        class="commentsArea"
+        id="comments-${post.id}"
+        style="display:none;margin-top:12px;"
+      >
+
+        <div
+          class="commentsList"
+          id="commentList-${post.id}"
+        ></div>
+
+        <div style="
+          display:flex;
+          gap:8px;
+          margin-top:10px;
+        ">
+
+          <input
+            class="commentInput"
+            data-id="${post.id}"
+            placeholder="Write a comment..."
+            style="margin:0;"
+          >
+
+          <button
+            class="commentBtn"
+            data-id="${post.id}"
+          >
+            Send
+          </button>
+
+        </div>
+
+      </div>
+
+    </article>
+  `;
+}
+
+
+/* ================= LIKE ================= */
+
+document.addEventListener("click", async (e) => {
+
+  const btn =
+    e.target.closest(".likeBtn");
+
+  if(!btn) return;
+
+  const postId =
+    btn.dataset.id;
+
+  const liked =
+    btn.dataset.liked === "yes";
+
+  if(liked){
+
+    await supabase
+      .from("post_likes")
+      .delete()
+      .eq("post_id", postId)
+      .eq("user_id", currentUser.id);
+
+  }else{
+
+    const { error } =
+      await supabase
+        .from("post_likes")
+        .insert({
+          post_id:postId,
+          user_id:currentUser.id
+        });
+
+    if(!error){
+
+      const { data: post } =
+        await supabase
+          .from("posts")
+          .select("user_id")
+          .eq("id",postId)
+          .single();
+
+      if(post){
+
+        await notify(
+          post.user_id,
+          "like",
+          postId
+        );
+
+      }
+
+    }
+  }
+
+  await loadFeed();
+
+});
+
+
+/* ================= COMMENT TOGGLE ================= */
+
+document.addEventListener("click", async (e) => {
+
+  const btn =
+    e.target.closest(".commentToggle");
+
+  if(!btn) return;
+
+  const postId =
+    btn.dataset.id;
+
+  const area =
+    document.getElementById(
+      `comments-${postId}`
+    );
+
+  if(area.style.display === "none"){
+
+    area.style.display = "block";
+
+    await loadComments(postId);
+
+  }else{
+
+    area.style.display = "none";
+
+  }
+
+});
+
+
+/* ================= LOAD COMMENTS ================= */
+
+async function loadComments(postId){
+
+  const list =
+    document.getElementById(
+      `commentList-${postId}`
+    );
+
+  const { data, error } =
+    await supabase
+      .from("comments")
+      .select(`
+        *,
+        profiles:user_id(
+          full_name,
+          username,
+          avatar_url
+        )
+      `)
+      .eq("post_id",postId)
+      .order("created_at", {
+        ascending:true
+      });
+
+  if(error){
+
+    list.innerHTML =
+      `<p style="color:#ff5577;">Failed to load comments.</p>`;
+
+    return;
+  }
+
+  if(!data?.length){
+
+    list.innerHTML =
+      `<p style="color:#777;">No comments yet.</p>`;
+
+    return;
+  }
+
+  list.innerHTML =
+    data.map(comment => `
+
+      <div class="comment">
+
+        <div style="
+          display:flex;
+          gap:8px;
+          align-items:center;
+        ">
+
+          <img
+            class="avatar"
+            style="
+              width:32px;
+              height:32px;
+            "
+            src="${avatar(
+              comment.profiles?.avatar_url,
+              comment.profiles?.full_name
+            )}"
+          >
+
+          <strong>
+            ${esc(
+              comment.profiles?.full_name ||
+              comment.profiles?.username ||
+              "User"
+            )}
+          </strong>
+
+        </div>
+
+        <div style="margin-top:6px;">
+          ${esc(comment.content)}
+        </div>
+
+      </div>
+
+    `).join("");
+
+}
+
+
+/* ================= ADD COMMENT ================= */
+
+document.addEventListener("click", async (e) => {
+
+  const btn =
+    e.target.closest(".commentBtn");
+
+  if(!btn) return;
+
+  const postId =
+    btn.dataset.id;
+
+  const input =
+    document.querySelector(
+      `.commentInput[data-id="${postId}"]`
+    );
+
+  const content =
+    input.value.trim();
+
+  if(!content) return;
+
+  btn.disabled = true;
+
+  const { error } =
+    await supabase
+      .from("comments")
+      .insert({
+        post_id:postId,
+        user_id:currentUser.id,
+        content
+      });
+
+  if(error){
+
+    showMessage(error.message);
+
+  }else{
+
+    input.value = "";
+
+    const { data: post } =
+      await supabase
+        .from("posts")
+        .select("user_id")
+        .eq("id",postId)
+        .single();
+
+    if(post){
+
+      await notify(
+        post.user_id,
+        "comment",
+        postId
+      );
+
+    }
+
+    await loadComments(postId);
+  }
+
+  btn.disabled = false;
+
+});
+
+
+/* ================= DELETE ================= */
+
+document.addEventListener("click", async (e) => {
+
+  const btn =
+    e.target.closest(".deletePost");
+
+  if(!btn) return;
+
+  const id =
+    btn.dataset.id;
+
+  if(!confirm("Delete this post?")) return;
+
+  const { error } =
+    await supabase
+      .from("posts")
+      .delete()
+      .eq("id",id)
+      .eq("user_id",currentUser.id);
+
+  if(error){
+
+    showMessage(error.message);
+
+    return;
+  }
+
+  showMessage(
+    "Post deleted.",
+    "success"
+  );
+
+  await loadFeed();
+
+});
+
+
+/* ================= SHARE ================= */
+
+document.addEventListener("click", async (e) => {
+
+  const btn =
+    e.target.closest(".shareBtn");
+
+  if(!btn) return;
+
+  const url =
+    `${location.origin}${location.pathname}#post-${btn.dataset.id}`;
+
+  try{
+
+    await navigator.clipboard.writeText(url);
+
+    showMessage(
+      "Post link copied!",
+      "success"
+    );
+
+  }catch{
+
+    prompt(
+      "Copy this link:",
+      url
+    );
+
+  }
+
+});
+
+
+/* ================= SEARCH ================= */
+
+document
+  .getElementById("search")
+  .addEventListener("input", async (e) => {
+
+    const q =
+      e.target.value.trim();
+
+    const result =
+      document.getElementById(
+        "searchResults"
+      );
+
+    if(!q){
+
+      result.innerHTML = "";
+
+      return;
+    }
+
+    const { data: users } =
+      await supabase
+        .from("profiles")
+        .select("*")
+        .or(
+          `username.ilike.%${q}%,full_name.ilike.%${q}%`
+        )
+        .limit(10);
+
+    result.innerHTML = `
+      <div class="card">
+
+        <h3 style="margin-bottom:12px;">
+          Search results
+        </h3>
+
+        ${
+          users?.length
+          ? users.map(user => `
+
+            <a
+              href="profile.html?id=${user.id}"
+              style="
+                display:flex;
+                align-items:center;
+                gap:10px;
+                padding:10px;
+                color:white;
+                text-decoration:none;
+                border-radius:12px;
+              "
+            >
+
+              <img
+                class="avatar"
+                style="
+                  width:40px;
+                  height:40px;
+                "
+                src="${avatar(
+                  user.avatar_url,
+                  user.full_name
+                )}"
+              >
+
+              <div>
+                <strong>
+                  ${esc(user.full_name)}
+                </strong>
+
+                <div style="color:#777;">
+                  @${esc(user.username)}
+                </div>
+              </div>
+
+            </a>
+
+          `).join("")
+          : `
+            <p style="color:#777;">
+              No users found.
+            </p>
+          `
+        }
+
+      </div>
+    `;
+
+  });
+
+
+init();
+
+</script>
+
+</body>
+  </html>
