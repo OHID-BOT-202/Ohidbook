@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1.0"
+>
+
+<title>Settings • OhidBook</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+<header class="top">
+
+  <div class="brand">
+    OhidBook
+  </div>
+
+  <nav class="nav">
+
+    <a href="index.html">
+      Home
+    </a>
+
+    <a href="profile.html">
+      Profile
+    </a>
+
+  </nav>
+
+</header>
+
+
+<main>
+
+  <div class="settings-box">
+
+    <h2 style="margin-bottom:20px;">
+      ⚙ Settings
+    </h2>
+
+
+    <div class="card">
+
+      <h3>
+        Account
+      </h3>
+
+      <p style="
+        color:#888;
+        margin-top:7px;
+      ">
+        Manage your OhidBook account.
+      </p>
+
+    </div>
+
+
+    <a
+      href="edit-profile.html"
+      class="btn"
+      style="
+        display:block;
+        text-align:center;
+        text-decoration:none;
+        margin-bottom:12px;
+      "
+    >
+      ✏ Edit Profile
+    </a>
+
+
+    <button
+      id="logout"
+      style="
+        width:100%;
+        background:linear-gradient(
+          90deg,
+          #ff0055,
+          #ff0033
+        );
+      "
+    >
+      🚪 Logout
+    </button>
+
+  </div>
+
+</main>
+
+
+<script type="module">
+
+import {
+  logout,
+  getUser
+} from "./app.js";
+
+
+const user =
+  await getUser();
+
+if(!user){
+
+  location.href="login.html";
+
+}
+
+
+document
+  .getElementById("logout")
+  .addEventListener(
+    "click",
+    async () => {
+
+      await logout();
+
+    }
+  );
+
+</script>
+
+</body>
+</html>
