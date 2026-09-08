@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1.0"
+>
+
+<title>Profile • OhidBook</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+<header class="top">
+
+  <div class="brand">
+    OhidBook
+  </div>
+
+  <nav class="nav">
+
+    <a href="index.html">
+      Home
+    </a>
+
+    <a href="settings.html">
+      ⚙
+    </a>
+
+  </nav>
+
+</header>
+
+
+<main>
+
+  <div
+    id="profile"
+    class="profile-card"
+  >
+    Loading profile...
+  </div>
+
+  <div id="posts">
+    Loading posts...
+  </div>
+
+</main>
+
+
+<script type="module">
+
+import {
+  supabase
+} from "./supabase.js";
+
+import {
+  esc,
+  avatar,
+  timeAgo,
+  getUser,
+  getProfile,
+  showMessage
+} from "./app.js";
+
+
+const params =
+  new URLSearchParams(location.search);
+
+const profileId =
+  params.get("id");
+
+let currentUser;
+
+async function init(){
+
+  currentUser = await getUser();
+
+  if(!currentUser){
+
+    location.href="login.html";
+
+    return;
+  }
+
+  if(!profileId){
+
+    location.href =
+      `profile.html?id=${currentUser.id}`;
+
+    return;
+  }
+
+  await loadProfile();
+
+  await loadPosts();
+
+}
+
+
+async function loadProfile(){
+
+  const profile =
+    await getProfile(profileId);
+
+  if(!profile){
+
+    document.getElementById("profile").innerHTML =
+      `<h3>User not found.</h3>`;
+
+    return;
+  }
+
+  const { count: followers } =
+    await supabase
+      .from("follows")
+      .select("*", {
+        count:"exact",
+        head:true
+      })
+      .eq("following_id",profileId);
+
+  const { count: following } =
+    await supabase
+      .from("follows")
+      .select("*", {
+        count:"exact",
+        head:true
+      })
+      .eq("follower_id",profileId);
+
+  const { count: posts } =
+    await supabase
+      .from("posts")
+      .select("*", {
+        count:"exact",
+        head:true
+      })
+      .eq("user_id",profileId);
+
+  let followingMe = false;
+
+  if(currentUser.id !== profileId){
+
+    const { data } =
+      await supabase
+        .from("follows")
+        .select("follower_id")
+        .eq("follower_id",currentUser.id)
+        .eq("following_id",profileId)
+        .maybeSingle();
+
+    followingMe = !!data;
+  }
+
+  const isMe =
+    currentUser.id === profileId;
+
+  document.getElementById("profile").innerHTML = `
+
+    <img
+      class="profile-cover"
+      src="${
+        profile.cover_url ||
+        "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=80"
+      }"
+    >
+
+    <img
+      class="profile-avatar"
+      src="${avatar(
+        profile.avatar_url,
+        profile.full_name
+      )}"
+    >
+
+    <div class="profile-name">
+      ${esc(profile.full_name || "User")}
+    </div>
+
+    <div class="username">
+      @${esc(profile.username || "")}
+    </div>
+
+    <div class="bio">
+      ${esc(profile.bio || "No bio yet.")}
+    </div>
+
+    <div class="profile-stats">
+
+      <div class="profile-stat">
+        <strong>${posts || 0}</strong>
+        <span>Posts</span>
+      </div>
+
+      <div class="profile-stat">
+        <strong>${followers || 0}</strong>
+        <span>Followers</span>
+      </div>
+
+      <div class="profile-stat">
+        <strong>${following || 0}</strong>
+        <span>Following</span>
+      </div>
+
+    </div>
+
+    <div style="
+      margin-top:15px;
+      display:flex;
+      gap:10px;
+    ">
+
+      ${
+        isMe
+        ? `
+          <a
+            class="btn"
+            href="edit-profile.html"
+            style="
+              text-decoration:none;
+              text-align:center;
+              flex:1;
+            "
+          >
+            ✏ Edit Profile
+          </a>
+        `
+        : `
+          <button
+            id="followBtn"
+            style="flex:1;"
+          >
+            ${followingMe ? "✓ Following" : "+ Follow"}
+          </button>
+        `
+      }
+
+    </div>
+  `;
+
+
+  const followBtn =
+    document.getElementById("followBtn");
+
+  if(followBtn){
+
+    followBtn.addEventListener(
+      "click",
+      async () => {
+
+        if(followingMe){
+
+          await supabase
+            .from("follows")
+            .delete()
+            .eq("follower_id",currentUser.id)
+            .eq("following_id",profileId);
+
+          showMessage(
+            "Unfollowed.",
+            "success"
+          );
+
+        }else{
+
+          const { error } =
+            await supabase
+              .from("follows")
+              .insert({
+                follower_id:currentUser.id,
+                following_id:profileId
+              });
+
+          if(error){
+
+            showMessage(error.message);
+
+            return;
+          }
+
+          showMessage(
+            "Following!",
+            "success"
+          );
+        }
+
+        await loadProfile();
+
+      }
+    );
+
+  }
+
+}
+
+
+async function loadPosts(){
+
+  const box =
+    document.getElementById("posts");
+
+  const { data, error } =
+    await supabase
+      .from("posts")
+      .select("*")
+      .eq("user_id",profileId)
+      .order("created_at", {
+        ascending:false
+      });
+
+  if(error){
+
+    box.innerHTML =
+      `<div class="card">Failed to load posts.</div>`;
+
+    return;
+  }
+
+  if(!data?.length){
+
+    box.innerHTML = `
+      <div class="card" style="text-align:center;">
+
+        <div style="font-size:40px;">
+          📭
+        </div>
+
+        <h3>No posts yet</h3>
+
+      </div>
+    `;
+
+    return;
+  }
+
+  box.innerHTML =
+    data.map(post => `
+
+      <div class="card">
+
+        ${
+          post.content
+          ? `
+            <p style="
+              white-space:pre-wrap;
+              line-height:1.6;
+            ">
+              ${esc(post.content)}
+            </p>
+          `
+          : ""
+        }
+
+        ${
+          post.media_url
+          ? post.media_type === "video"
+            ? `
+              <video
+                class="post-media"
+                controls
+                src="${post.media_url}"
+              ></video>
+            `
+            : `
+              <img
+                class="post-media"
+                src="${post.media_url}"
+              >
+            `
+          : ""
+        }
+
+        <div style="
+          margin-top:10px;
+          color:#777;
+          font-size:12px;
+        ">
+          ${timeAgo(post.created_at)}
+        </div>
+
+      </div>
+
+    `).join("");
+
+}
+
+
+init();
+
+</script>
+
+</body>
+</html>
